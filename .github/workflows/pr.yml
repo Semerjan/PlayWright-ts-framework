@@ -1,0 +1,78 @@
+# ──────────────────────────────────────────────────────────────────────────────
+# Clearight PR Smoke Check
+# Triggers on: pull requests targeting main or develop
+# Runs: Smoke-tagged tests only (fast, < 5 min)
+# ──────────────────────────────────────────────────────────────────────────────
+
+name: Clearight PR Checks
+
+on:
+  pull_request:
+    branches:
+      - main
+      - develop
+
+env:
+  NODE_VERSION: '20'
+
+jobs:
+  smoke-tests:
+    name: 'Smoke Tests (@smoke)'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js ${{ env.NODE_VERSION }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Playwright browsers
+        run: npx playwright install --with-deps chromium
+
+      - name: Run smoke tests (UI + API)
+        run: npx playwright test --grep @smoke --reporter=list,github
+        env:
+          CI: true
+          BASE_URL:            ${{ vars.BASE_URL || 'https://www.saucedemo.com' }}
+          API_BASE_URL:        ${{ vars.API_BASE_URL || 'https://reqres.in' }}
+          SAUCE_STANDARD_USER: ${{ secrets.SAUCE_STANDARD_USER || 'standard_user' }}
+          SAUCE_PASSWORD:      ${{ secrets.SAUCE_PASSWORD || 'secret_sauce' }}
+
+      - name: Upload smoke test artifacts on failure
+        uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: smoke-failures
+          path: |
+            test-results/
+            playwright-report/
+          retention-days: 3
+
+  lint:
+    name: 'TypeScript Lint & Type Check'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js ${{ env.NODE_VERSION }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: TypeScript type check
+        run: npm run type-check
